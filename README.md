@@ -1,12 +1,5 @@
 ---
 title: Experimental Research & Observational Learning Application
-emoji: 📊
-colorFrom: red
-colorTo: blue
-sdk: docker
-pinned: false
-license: mit
-app_port: 7860
 ---
 
 # EROL.app - Experimental Research & Observational Learning Application
