@@ -1,0 +1,37 @@
+Package: EROL-app
+Type: Package
+Title: Experimental Research & Observational Learning (EROL) Application
+Version: 1.0.0
+Imports:
+    shiny,
+    shinydashboard,
+    DT,
+    plotly,
+    haven,
+    foreign,
+    dplyr,
+    ggplot2,
+    corrplot,
+    broom,
+    knitr,
+    kableExtra,
+    fresh,
+    later,
+    psych,
+    GPArotation,
+    lavaan,
+    semPlot,
+    viridis,
+    networkD3,
+    igraph,
+    reshape2,
+    RColorBrewer,
+    lavaanPlot,
+    scales,
+    magrittr,
+    sandwich,
+    lmtest,
+    performance,
+    htmltools,
+    stats
+Encoding: UTF-8
