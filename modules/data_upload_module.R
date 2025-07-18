@@ -1,11 +1,71 @@
 # ===================================================================
 # ENHANCED DATA UPLOAD MODULE: modules/data_upload_module.R
-# Updated to support multiple file formats: .dta, .sav, .rds, .csv, .xlsx, .xls, .tsv, .txt
 # ===================================================================
 
-# Helper function for null coalescing
 `%||%` <- function(lhs, rhs) {
   if (is.null(lhs) || length(lhs) == 0) rhs else lhs
+}
+
+# Function to scan and list available sample datasets
+get_available_datasets <- function() {
+  data_folder <- "data"
+  
+  # Check if data folder exists
+  if (!dir.exists(data_folder)) {
+    return(data.frame(
+      file_name = character(0),
+      display_name = character(0),
+      description = character(0),
+      format = character(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  # Supported file extensions
+  supported_extensions <- c("xlsx", "xls", "csv", "dta", "sav", "rds", "tsv", "txt")
+  
+  # Get all files in data folder
+  all_files <- list.files(data_folder, full.names = FALSE)
+  
+  # Filter for supported formats
+  data_files <- all_files[tools::file_ext(tolower(all_files)) %in% supported_extensions]
+  
+  if (length(data_files) == 0) {
+    return(data.frame(
+      file_name = character(0),
+      display_name = character(0),
+      description = character(0),
+      format = character(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  datasets <- data.frame(
+    file_name = data_files,
+    display_name = tools::file_path_sans_ext(data_files),
+    description = sapply(data_files, function(f) {
+      name_lower <- tolower(tools::file_path_sans_ext(f))
+      if (grepl("measurement|scale|psycho", name_lower)) {
+        return("Psychological measurement and scale data")
+      } else if (grepl("survey|questionnaire", name_lower)) {
+        return("Survey and questionnaire responses")
+      } else if (grepl("experiment|trial", name_lower)) {
+        return("Experimental data and trial results")
+      } else if (grepl("demo|example|test|sample", name_lower)) {
+        return("Demonstration and example dataset")
+      } else if (grepl("student|education", name_lower)) {
+        return("Educational and student data")
+      } else if (grepl("employee|work|job", name_lower)) {
+        return("Employee and workplace data")
+      } else {
+        return("Sample dataset for analysis")
+      }
+    }),
+    format = toupper(tools::file_ext(data_files)),
+    stringsAsFactors = FALSE
+  )
+  
+  return(datasets)
 }
 
 # UI Function
@@ -15,12 +75,47 @@ data_upload_UI <- function(id) {
   tabItem(tabName = "upload",
           fluidRow(
             box(title = "Upload Your Dataset", status = "primary", solidHeader = TRUE, width = 12,
+                
+                div(style = "background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #b3d9ff;",
+                    h5("🎯 Quick Start with Sample Datasets:", style = "color: #1976d2; margin-top: 0; margin-bottom: 10px;"),
+                    p("New to the application? Choose from a collection of sample datasets to explore the features!", 
+                      style = "margin-bottom: 15px; color: #333;"),
+                    
+                    fluidRow(
+                      column(8,
+                             selectInput(ns("sample_dataset"), "Choose a Sample Dataset:",
+                                         choices = NULL, # Will be populated dynamically
+                                         width = "100%")
+                      ),
+                      column(4,
+                             actionButton(ns("load_sample"), "📊 Load Selected Dataset", 
+                                          class = "btn-info", style = "margin-top: 25px; width: 100%;")
+                      )
+                    ),
+                    
+                    conditionalPanel(condition = paste0("input['", ns("sample_dataset"), "'] != ''"),
+                                     div(id = ns("dataset_description"), 
+                                         style = "margin-top: 10px; padding: 10px; background-color: rgba(255,255,255,0.7); border-radius: 4px;",
+                                         htmlOutput(ns("sample_dataset_info"))
+                                     )
+                    ),
+                    
+                    tags$small("Note: These datasets are selected from Rdatasets collection (Arel-Bundock, 2025)* and include various data types useful for testing measurement analyses, correlations, and regressions.", 
+                               style = "color: #666; margin-top: 10px; display: block;"),
+                    tags$small(HTML("*Arel-Bundock V (2025). <em>Rdatasets: A collection of datasets originally distributed in various R packages.</em> R package version 1.0.0, <a href='https://vincentarelbundock.github.io/Rdatasets' target='_blank' style='color: #0066cc; text-decoration: none;'>https://vincentarelbundock.github.io/Rdatasets</a>"), 
+                               style = "color: #888; font-size: 11px; margin-top: 5px; display: block;")
+                ),
+                
+                # Divider
+                hr(style = "border-top: 2px solid #ddd; margin: 20px 0;"),
+                
+                # File upload section
+                h5("📁 Or Upload Your Own Data:", style = "color: #333; margin-bottom: 15px;"),
                 fileInput(ns("file"), "Choose Data File", 
                           accept = c(".dta", ".sav", ".rds", ".csv", ".xlsx", ".xls", ".tsv", ".txt")),
                 helpText("📁 Supported formats: Stata (.dta), SPSS (.sav), R (.rds), CSV (.csv), Excel (.xlsx, .xls), Tab-separated (.tsv), Text (.txt)"),
                 helpText("📊 Maximum file size: 100MB"),
                 helpText("⚠️ For very large datasets, use the variable filtering options below."),
-                
                 # File format detection and options
                 conditionalPanel(condition = paste0("output['", ns("showFormatOptions"), "']"),
                                  div(style = "background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0;",
@@ -51,7 +146,6 @@ data_upload_UI <- function(id) {
                                                       ),
                                                       numericInput(ns("csv_skip"), "Skip lines:", value = 0, min = 0, max = 100)
                                      ),
-                                     
                                      # Excel specific options
                                      conditionalPanel(condition = paste0("output['", ns("isExcelFormat"), "']"),
                                                       h6("Excel Import Options:"),
@@ -146,6 +240,105 @@ data_upload_UI <- function(id) {
             )
           )
   )
+}
+
+# Function to load any sample dataset by filename
+load_sample_dataset <- function(filename) {
+  file_path <- file.path("data", filename)
+  
+  # Check if the file exists
+  if (!file.exists(file_path)) {
+    stop(paste("Sample dataset file not found:", filename))
+  }
+  
+  # Get file extension
+  file_extension <- tools::file_ext(tolower(filename))
+  
+  tryCatch({
+    df <- NULL
+    method_used <- ""
+    
+    if (file_extension == "xlsx" || file_extension == "xls") {
+      # Excel files
+      if (!requireNamespace("readxl", quietly = TRUE)) {
+        stop("Package 'readxl' is required for Excel files. Please install it.")
+      }
+      df_raw <- readxl::read_excel(file_path)
+      df <- as.data.frame(df_raw)
+      method_used <- "Excel (readxl::read_excel)"
+      
+    } else if (file_extension == "csv") {
+      # CSV files
+      df <- utils::read.csv(file_path, stringsAsFactors = FALSE,
+                            na.strings = c("", "NA", "NULL", "null", "N/A", "#N/A"))
+      method_used <- "CSV (utils::read.csv)"
+      
+    } else if (file_extension == "tsv") {
+      # TSV files
+      df <- utils::read.delim(file_path, stringsAsFactors = FALSE,
+                              na.strings = c("", "NA", "NULL", "null", "N/A", "#N/A"))
+      method_used <- "TSV (utils::read.delim)"
+      
+    } else if (file_extension == "txt") {
+      # Text files (assume tab-delimited)
+      df <- utils::read.delim(file_path, stringsAsFactors = FALSE,
+                              na.strings = c("", "NA", "NULL", "null", "N/A", "#N/A"))
+      method_used <- "Text (utils::read.delim)"
+      
+    } else if (file_extension == "dta") {
+      # Stata files
+      if (!requireNamespace("haven", quietly = TRUE)) {
+        stop("Package 'haven' is required for Stata files. Please install it.")
+      }
+      df_raw <- haven::read_dta(file_path)
+      df <- haven::zap_labels(df_raw)
+      df <- as.data.frame(df)
+      method_used <- "Stata (haven::read_dta)"
+      
+    } else if (file_extension == "sav") {
+      # SPSS files
+      if (!requireNamespace("haven", quietly = TRUE)) {
+        stop("Package 'haven' is required for SPSS files. Please install it.")
+      }
+      df_raw <- haven::read_sav(file_path)
+      df <- haven::zap_labels(df_raw)
+      df <- as.data.frame(df)
+      method_used <- "SPSS (haven::read_sav)"
+      
+    } else if (file_extension == "rds") {
+      # R files
+      df <- readRDS(file_path)
+      if (!is.data.frame(df)) {
+        stop("RDS file does not contain a data frame")
+      }
+      method_used <- "R (readRDS)"
+      
+    } else {
+      stop(paste("Unsupported file format:", file_extension))
+    }
+    
+    # Post-process the data (convert character columns to factors where appropriate)
+    if (!is.null(df)) {
+      for (col_name in names(df)) {
+        col_data <- df[[col_name]]
+        
+        if (is.character(col_data)) {
+          unique_vals <- length(unique(col_data[!is.na(col_data)]))
+          total_vals <- length(col_data[!is.na(col_data)])
+          
+          # Convert to factor if it looks categorical
+          if (unique_vals < 20 || (total_vals > 0 && unique_vals / total_vals < 0.5)) {
+            df[[col_name]] <- factor(col_data)
+          }
+        }
+      }
+    }
+    
+    return(list(data = df, success = TRUE, method = paste("Sample Data -", method_used)))
+    
+  }, error = function(e) {
+    return(list(data = NULL, success = FALSE, error = e$message))
+  })
 }
 
 # Enhanced Stata file loading function
@@ -246,6 +439,156 @@ data_upload_server <- function(id, shared_data) {
     )
     filters_list <- reactiveVal(list())
     
+    # Store available datasets
+    available_datasets <- reactive({
+      get_available_datasets()
+    })
+    
+    # Update sample dataset choices on startup (optimized for speed)
+    observe({
+      if (dir.exists("data")) {
+        supported_extensions <- c("xlsx", "xls", "csv", "dta", "sav", "rds", "tsv", "txt")
+        all_files <- list.files("data", full.names = FALSE)
+        data_files <- all_files[tools::file_ext(tolower(all_files)) %in% supported_extensions]
+        
+        if (length(data_files) > 0) {
+          choices <- setNames(data_files, 
+                              paste0(tools::file_path_sans_ext(data_files), " (", toupper(tools::file_ext(data_files)), ")"))
+          choices <- c("Select a sample dataset..." = "", choices)
+        } else {
+          choices <- c("No sample datasets found" = "")
+        }
+      } else {
+        choices <- c("Data folder not found" = "")
+      }
+      
+      updateSelectInput(session, "sample_dataset", choices = choices)
+    })
+    
+    # Show sample dataset information
+    output$sample_dataset_info <- renderUI({
+      req(input$sample_dataset)
+      if (input$sample_dataset == "") return(NULL)
+      
+      datasets <- available_datasets()
+      selected_dataset <- datasets[datasets$file_name == input$sample_dataset, ]
+      
+      if (nrow(selected_dataset) > 0) {
+        HTML(paste0(
+          "<strong>📋 Dataset:</strong> ", selected_dataset$display_name, "<br/>",
+          "<strong>📁 Format:</strong> ", selected_dataset$format, " file<br/>",
+          "<strong>📝 Description:</strong> ", selected_dataset$description, "<br/>",
+          "<strong>📂 File:</strong> ", selected_dataset$file_name
+        ))
+      }
+    })
+
+    observeEvent(input$load_sample, {
+      req(input$sample_dataset)
+      
+      if (input$sample_dataset == "") {
+        showNotification("Please select a sample dataset first.", type = "warning")
+        return()
+      }
+      
+      showNotification("Loading selected sample dataset... Please wait.", type = "message", duration = 3)
+      
+      result <- load_sample_dataset(input$sample_dataset)
+      
+      if (result$success) {
+        df <- result$data
+        
+        # Store in shared data
+        shared_data$raw_data <- df
+        shared_data$working_data <- df
+        
+        # Update UI choices
+        all_vars <- names(df)
+        updateSelectInput(session, "variables_to_keep", choices = all_vars)
+        updateSelectInput(session, "filter_variable", choices = c("Select variable" = "", all_vars))
+        updateSelectInput(session, "inspect_variable", choices = c("Select variable" = "", all_vars))
+        
+        # Get dataset info for R code
+        datasets <- available_datasets()
+        selected_info <- datasets[datasets$file_name == input$sample_dataset, ]
+        
+        # Generate R code for sample data loading
+        file_ext <- tools::file_ext(tolower(input$sample_dataset))
+        
+        if (file_ext %in% c("xlsx", "xls")) {
+          r_code <- paste0(
+            "# Load required libraries\n",
+            "library(readxl)\n\n",
+            "# Load sample dataset\n",
+            "data <- read_excel('data/", input$sample_dataset, "')\n",
+            "data <- as.data.frame(data)"
+          )
+        } else if (file_ext == "csv") {
+          r_code <- paste0(
+            "# Load sample dataset\n",
+            "data <- read.csv('data/", input$sample_dataset, "', stringsAsFactors = FALSE)"
+          )
+        } else if (file_ext %in% c("tsv", "txt")) {
+          r_code <- paste0(
+            "# Load sample dataset\n",
+            "data <- read.delim('data/", input$sample_dataset, "', stringsAsFactors = FALSE)"
+          )
+        } else if (file_ext == "dta") {
+          r_code <- paste0(
+            "# Load required libraries\n",
+            "library(haven)\n\n",
+            "# Load sample dataset\n",
+            "data <- read_dta('data/", input$sample_dataset, "')\n",
+            "data <- zap_labels(data)\n",
+            "data <- as.data.frame(data)"
+          )
+        } else if (file_ext == "sav") {
+          r_code <- paste0(
+            "# Load required libraries\n",
+            "library(haven)\n\n",
+            "# Load sample dataset\n",
+            "data <- read_sav('data/", input$sample_dataset, "')\n",
+            "data <- zap_labels(data)\n",
+            "data <- as.data.frame(data)"
+          )
+        } else if (file_ext == "rds") {
+          r_code <- paste0(
+            "# Load sample dataset\n",
+            "data <- readRDS('data/", input$sample_dataset, "')"
+          )
+        } else {
+          r_code <- paste0(
+            "# Load sample dataset\n",
+            "# File: data/", input$sample_dataset
+          )
+        }
+        
+        r_code <- paste0(r_code, "\n\n# Dataset loaded: ", nrow(df), " observations, ", ncol(df), " variables")
+        add_r_code(shared_data, r_code, "Sample Data Loading")
+        
+        showNotification(paste("Sample dataset loaded successfully!", 
+                               selected_info$display_name, "-", nrow(df), "observations,", ncol(df), "variables"), 
+                         type = "message", duration = 5)
+        
+        # Store import information for display
+        shared_data$import_info <- list(
+          method = result$method,
+          file_type = paste("SAMPLE DATA (", toupper(tools::file_ext(input$sample_dataset)), ")", sep = ""),
+          file_name = input$sample_dataset,
+          rows = nrow(df),
+          cols = ncol(df)
+        )
+        
+        # Reset file info since this is sample data
+        file_info$extension <- NULL
+        file_info$size <- NULL
+        file_info$name <- NULL
+        
+      } else {
+        showNotification(paste("Error loading sample dataset:", result$error), type = "error", duration = 10)
+        showNotification("Please ensure the sample data file exists in the 'data' folder.", type = "warning", duration = 8)
+      }
+    })
     # Detect file format and show options
     observe({
       req(input$file)
@@ -378,7 +721,7 @@ data_upload_server <- function(id, shared_data) {
           col_names <- options$col_names %||% TRUE
           range <- options$range
           
-          # Convert sheet to numeric if it's a number
+          # Convert sheet to numeric if it's a nmber
           if (is.character(sheet) && grepl("^\\d+$", sheet)) {
             sheet <- as.numeric(sheet)
           }
@@ -425,7 +768,6 @@ data_upload_server <- function(id, shared_data) {
         return(list(data = NULL, method = method_used, success = FALSE, error = e$message))
       })
     }
-    
     # Generate R code for import
     generate_import_code <- function(file_extension, file_name, options = list()) {
       base_code <- "# Load required libraries\n"

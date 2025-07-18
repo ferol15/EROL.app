@@ -68,7 +68,7 @@ ui <- dashboardPage(
         HTML("<strong>E</strong>xperimental <strong>R</strong>esearch & <strong>O</strong>bservational <strong>L</strong>earning (<strong>EROL</strong>) Application"), 
         style = "font-size: 13px; font-weight: 300; letter-spacing: 0.3px; margin-bottom: 8px;"
       ),
-      tags$div("Version 2025-07-05", style = "font-size: 14px; font-weight: 500; font-style: italic; letter-spacing: 0.5px"),
+      tags$div("Version 2025-07-18", style = "font-size: 14px; font-weight: 500; font-style: italic; letter-spacing: 0.5px"),
       tags$div("⚠️ Several features are under development.", style = "font-size: 9px; font-weight: 400;"),
       tags$div(
         "Contact: ", 
